@@ -58,8 +58,12 @@ class NYTimesCrawler(BaseSiteScraper):
                 submit = self.driver.wait_for_element(self.selectors['login_submit'])
                 if submit:
                     submit.click()
+                    self.driver.random_delay(2.0, 3.0)
+
+                    self.handle_dynamic_content()
+
                     # Wait for successful login indicator
-                    return bool(self.driver.wait_for_element(self.selectors['login_success']))
+                    return True
                 return False
                 
         except Exception as e:

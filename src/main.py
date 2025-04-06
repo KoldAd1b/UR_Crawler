@@ -33,12 +33,17 @@ async def main():
 
         # 1. Consent to policy 
         crawler.handle_dynamic_content()
+
         # 2. Login
-        crawler.handle_authentication()
+        if(crawler.config.requires_auth):
+            crawler.handle_authentication()
+
         # 3. Get article links
         crawler.handle_pagination()
+
         # 4. Extract article data
         crawler.extract_article_data()
+
         # 5. Save results
 
     
