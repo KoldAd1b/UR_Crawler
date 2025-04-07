@@ -1,5 +1,3 @@
-import json
-import csv
 import pandas as pd
 from typing import List, Dict, Optional, Any
 import logging
@@ -52,17 +50,14 @@ class BaseDataHandler(ABC):
         
         return df
 
-    @abstractmethod
-    def process_article_links(self, links: List[str]) -> pd.DataFrame:
-        """Process and deduplicate article links based on source-specific rules"""
-        pass
+  
 
     def save_article_links(self, links: List[str], format: str = "json") -> str:
         """Save article links to file using pandas with preprocessing"""
         try:
             # Clean and process links
-            cleaned_df = self._clean_links(links)
-            processed_df = self.process_article_links(cleaned_df['article_url'].tolist())
+            processed_df = self._clean_links(links)
+            
             
             if processed_df.empty:
                 logging.warning("No valid links to save after processing")
@@ -148,4 +143,5 @@ class BaseDataHandler(ABC):
 
         except Exception as e:
             logging.error(f"Error loading article links: {str(e)}")
-            return [] 
+            return []
+

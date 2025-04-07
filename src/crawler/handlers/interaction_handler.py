@@ -61,7 +61,8 @@ class InteractionHandler:
         """Scroll page by random increments."""
         try:
             # Scroll down by a random amount
-            scroll_amount = random.randint(amount,amount + 300)  # Randomly choose a scroll amount
+            # The amount should depend on the amount of content on the page. Test it manually using the browser and window.
+            scroll_amount = random.randint(amount,amount + 800)  # Randomly choose a scroll amount
             if type == "down":
                 self.driver.execute_script(f"window.scrollTo(0, {scroll_amount});")
             else:

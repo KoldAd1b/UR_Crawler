@@ -1,76 +1,65 @@
-import asyncio
+import os
 import logging
+import asyncio
+from dotenv import load_dotenv
 from crawler.base.base_crawler import BaseCrawler
 from crawler.sites.nytimes_crawler import NYTimesCrawler
-import json
-from datetime import datetime
 
-def setup_logging():
-    """Configure logging."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 async def main():
-    """Main execution function."""
-    setup_logging()
-    logging.info("Starting NYTimes News Crawler")
-    
-    crawler = None
+    """Main function to run the NYTimes crawler"""
     try:
+        # Load environment variables
+        load_dotenv()
+        
         # Initialize base crawler
         base_crawler = BaseCrawler(headless=False)
-       
-        
-        # Initialize NYTimes-specific crawler
-        crawler = NYTimesCrawler(base_crawler)
+        base_crawler.start()
 
-        # The flow should be like this
-
-        # Initialize the crawler
-        crawler.start()
-
-        # 1. Consent to policy 
-        crawler.handle_dynamic_content()
-
-        # 2. Login
-        if(crawler.config.requires_auth):
-            crawler.handle_authentication()
-
-        # 3. Get article links
-        crawler.handle_pagination()
-
-        # 4. Extract article data
-        crawler.extract_article_data()
-
-        # 5. Save results
-
-    
-        # Get article links from main page
-        articles = await crawler.get_article_links()
-        logging.info(f"Found {len(articles)} articles")
-        
-        # Process articles
-        results = []
-        for url in articles:
-            if article_data := await crawler.extract_article_data(url):
-                results.append(article_data)
+        try:
+            # Initialize NYTimes crawler
+            nytimes_crawler = NYTimesCrawler(base_crawler)
+            
+            # Handle authentication and consent
+            logger.info("Starting authentication and consent...")
+            if not nytimes_crawler.handle_auth():
+                logger.error("Authentication failed")
+                return
                 
-        # Save results
-        if results:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"data/nytimes_articles_{timestamp}.json", "w") as f:
-                json.dump(results, f, indent=2)
+            logger.info("Authentication successful. Starting article link extraction...")
+            
+            # Extract article links
+            links_file = await nytimes_crawler.extract_article_links()
+            
+            if not links_file:
+                logger.error("Failed to extract article links")
+                return
                 
-        logging.info(f"Successfully processed {len(results)} articles")
+            logger.info(f"Article links saved to: {links_file}")
+            
+            # Extract article data
+            logger.info("Starting article data extraction...")
+            articles_file = await nytimes_crawler.extract_all_articles(links_file)
+            
+            if not articles_file:
+                logger.error("Failed to extract article data")
+                return
+                
+            logger.info(f"Article data saved to: {articles_file}")
+            
+        finally:
+            # Clean up
+            base_crawler.stop()
             
     except Exception as e:
-        logging.error(f"Error during crawling: {str(e)}")
-        
-    finally:
-        if crawler:
-            crawler.crawler.stop()
+        logger.error(f"An error occurred: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main()) 

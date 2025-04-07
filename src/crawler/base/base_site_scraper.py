@@ -17,6 +17,7 @@ class ContentType(Enum):
 class SiteConfig:
     """Configuration for site-specific implementation"""
     name: str
+    login_url: str = None
     base_url: str
     selectors: Dict[str, str]
     pagination_type: PaginationType

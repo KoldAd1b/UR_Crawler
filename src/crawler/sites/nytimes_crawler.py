@@ -1,14 +1,9 @@
 import os
 from typing import Dict, Optional, Any, List
 from ..base.base_site_scraper import BaseSiteScraper, SiteConfig, PaginationType
-from selenium.webdriver.common.by import By
 import logging
 from dotenv import load_dotenv
-from ..handlers.dynamic_content_handler import DynamicContentHandler
-from ..handlers.interaction_handler import InteractionHandler
-from ..handlers.pagination_handler import PaginationHandler
-from ..handlers.authentication_handler import AuthenticationHandler
-from ..handlers.nytimes_data_handler import NYTimesDataHandler
+from ..data.base_data_handler import BaseDataHandler
 
 class NYTimesCrawler(BaseSiteScraper):
     """NYTimes-specific crawler implementation"""
@@ -26,79 +21,68 @@ class NYTimesCrawler(BaseSiteScraper):
         super().__init__(base_crawler, config)
         self.selectors = self.get_selectors()
         self.driver = base_crawler.driver
-        self.data_handler = NYTimesDataHandler()
+        self.data_handler = BaseDataHandler(source_name="NYTimes")
         load_dotenv()
 
     def handle_auth(self):
-        """Return NYTimes-specific authentication handler"""
+        """Handle authentication for NYTimes"""
         try:
-                # Navigate to login page
-                self.driver.get(self.config.login_url)
-                
-                # Wait for and fill login form
-                email = self.driver.wait_for_element(self.selectors['login_email'])
-                password = self.driver.wait_for_element(self.selectors['login_password'])
-                
-                if not (email and password):
-                    return False
-                
-                
-                email.send_keys(os.getenv('NYTIMES_EMAIL')[0])
-                for char in os.getenv('NYTIMES_EMAIL')[1:]:
-                    self.driver.random_delay(0.1, 0.3)  # Simulate human typing delay
-                    email.send_keys(char)
-                
-                password.send_keys(os.getenv('NYTIMES_PASSWORD')[0])
-                for char in os.getenv('NYTIMES_PASSWORD')[1:]:
-                    self.driver.random_delay(0.1, 0.3)  # Simulate human typing delay
-                    password.send_keys(char)
-               
-                
-                # Submit form
-                submit = self.driver.wait_for_element(self.selectors['login_submit'])
-                if submit:
-                    submit.click()
-                    self.driver.random_delay(2.0, 3.0)
-
-                    self.handle_dynamic_content()
-
-                    # Wait for successful login indicator
-                    return True
+            # Navigate to login page
+            self.driver.get(self.config.login_url)
+            self.driver.random_delay(1.0, 2.0)
+            
+            # Wait for and fill login form
+            email = self.driver.wait_for_element(self.selectors['login_email'])
+            password = self.driver.wait_for_element(self.selectors['login_password'])
+            
+            if not (email and password):
                 return False
-                
+            
+            # Type email with human-like delays
+            email.send_keys(os.getenv('NYTIMES_EMAIL')[0])
+            for char in os.getenv('NYTIMES_EMAIL')[1:]:
+                self.driver.random_delay(0.1, 0.3)
+                email.send_keys(char)
+            
+            # Type password with human-like delays
+            password.send_keys(os.getenv('NYTIMES_PASSWORD')[0])
+            for char in os.getenv('NYTIMES_PASSWORD')[1:]:
+                self.driver.random_delay(0.1, 0.3)
+                password.send_keys(char)
+            
+            # Submit form
+            if self.driver.click_element(self.selectors['login_submit']):
+                self.driver.random_delay(2.0, 3.0)
+                self.handle_consent()
+                return True
+            return False
+            
         except Exception as e:
-                logging.error(f"NYTimes authentication failed: {str(e)}")
-                return False
-                
-   
+            logging.error(f"NYTimes authentication failed: {str(e)}")
+            return False
 
-    def handle_pagination(self) :
-        """Return NYTimes-specific pagination handler"""
+    def handle_pagination(self) -> bool:
+        """Handle pagination for NYTimes"""
         try:
-                # NYTimes uses infinite scroll
-                last_height = self.driver.execute_script("return document.body.scrollHeight")
-                self.driver.execute_script(f"window.scrollTo(0, {last_height});")
-                self.driver.random_delay(1.0, 2.0)
-                
-                new_height = self.driver.execute_script("return document.body.scrollHeight")
-                return new_height > last_height
-                
+            # NYTimes uses infinite scroll
+            last_height = self.driver.execute_script("return document.body.scrollHeight")
+            self.driver.execute_script(f"window.scrollTo(0, {last_height});")
+            self.driver.random_delay(1.0, 2.0)
+            
+            new_height = self.driver.execute_script("return document.body.scrollHeight")
+            return new_height > last_height
+            
         except Exception as e:
-                logging.error(f"Pagination failed: {str(e)}")
-                return False
-                
-       
+            logging.error(f"Pagination failed: {str(e)}")
+            return False
 
-    def handle_dynamic_content(self) :
-        """Return NYTimes-specific dynamic content handler"""
-        interaction_handler = InteractionHandler(self.driver)
+    def handle_consent(self) -> bool:
+        """Handle consent for NYTimes"""
         try:
-            interaction_handler.click_element(self.selectors['consent_button'],type="xpath")                   
+            return self.driver.click_element(self.selectors['consent_button'], by="xpath")
         except Exception as e:
-                logging.error(f"Dynamic content handling failed: {str(e)}")
-                return False
-                
-                
+            logging.error(f"Consent handling failed: {str(e)}")
+            return False
 
     def get_selectors(self) -> Dict[str, str]:
         """Get NYTimes-specific selectors"""
@@ -108,67 +92,117 @@ class NYTimesCrawler(BaseSiteScraper):
             'login_password': 'input#password',
             'login_submit': 'button[type="submit"]',
             'login_success': '.user-tools',
-            'article_links': 'article a[href*="/2025/"]',
+            'article_links': 'article a',
             'newsletter_close': '.newsletter-prompt-close',
             'article_title': 'h1[data-testid="headline"]',
             'article_content': 'section[name="articleBody"] p',
             'article_date': 'time'
         }
 
-
-    async def extract_article_links(self) -> str:
+    async def extract_article_links(self) -> List[str]:
         """Extract and save article links"""
-        interaction_handler = InteractionHandler(self.driver)
         try:
             links = []
-            self.crawler.get_page(self.config.base_url)
-            
-            # Handle initial dynamic content
-            self.dynamic_handler(self.driver, self.get_selectors())
+            self.driver.get(self.config.base_url)
             self.driver.random_delay(1.0, 2.5)
 
             # Scroll and collect links
-            for i in range(15):
-                print(f"Scrolling {i+1} times")
-                interaction_handler.scroll_random(amount=300, type="down")
-                elements = self.driver.find_elements(
-                    By.CSS_SELECTOR, 
-                    self.get_selectors()['article_links']
-                )
+            for i in range(20):
+                logging.info(f"Scrolling {i+1} times")
+                self.driver.scroll_to_bottom(scroll_pause=1.0)
+                
+                elements = self.driver.find_elements(self.selectors['article_links'])
                 new_links = [elem.get_attribute('href') for elem in elements if elem.get_attribute('href')]
                 links.extend(new_links)
-                print(f"Found {len(new_links)} new links")
-                if not self.pagination_handler(self.driver, self.get_selectors()):
+                logging.info(f"Found {len(new_links)} new links")
+                
+                if not self.handle_pagination():
                     break
 
-            # Save links to file
             return self.data_handler.save_article_links(links)
             
         except Exception as e:
             logging.error(f"Error getting article links: {str(e)}")
             return None
 
-    async def extract_all_articles(self, links_file: str) -> str:
-        """Extract data from all articles in the links file"""
+    async def extract_article_data(self, url: str) -> Dict[str, Any]:
+        """Extract data from a single NYTimes article"""
         try:
-            # First ensure we're logged in
-            if not self.handle_auth():
-                raise Exception("Failed to authenticate")
+            self.driver.get(url)
+            self.driver.random_delay(1.0, 2.0)
+            
+            # Scroll to load dynamic content
+            self.driver.scroll_to_bottom(scroll_pause=0.5)
+            
+            # Extract article metadata
+            title = self._extract_title()
+            content = self._extract_content()
+            date = self._extract_date()
+            
+            if not all([title, content, date]):
+                logging.warning(f"Failed to extract required data from article: {url}")
+                return None
+                
+            processed_data = {
+                'url': url,
+                'title': title.strip(),
+                'content': content.strip(),
+                'date': date,
+                'source': 'NYTimes'
+            }
+            
+            return processed_data
+            
+        except Exception as e:
+            logging.error(f"Error extracting article data from {url}: {str(e)}")
+            return None
 
-            # Load links
-            links = self.data_handler.load_article_links(links_file)
-            articles_data = []
+    def _extract_title(self) -> Optional[str]:
+        """Extract article title"""
+        try:
+            title_element = self.driver.wait_for_element(self.selectors['article_title'])
+            return title_element.text if title_element else None
+        except Exception as e:
+            logging.error(f"Error extracting title: {str(e)}")
+            return None
 
-            # Extract data from each article
-            for link in links:
-                article_data = await self.extract_article_data(link)
-                if article_data:
-                    articles_data.append(article_data)
-                self.driver.random_delay(1.0, 2.0)  # Prevent rate limiting
+    def _extract_content(self) -> Optional[str]:
+        """Extract article content including hyperlinks"""
+        try:
+            content_elements = self.driver.find_elements(self.selectors['article_content'])
+            if not content_elements:
+                return None
 
-            # Save articles data
-            return self.data_handler.save_article_data(articles_data)
+            content = []
+            for elem in content_elements:
+                # Get all child nodes that are links
+                links = elem.find_elements("a")
+                paragraph_text = elem.text
+
+                # Build map of link text -> href
+                for link in links:
+                    link_text = link.text
+                    href = link.get_attribute("href")
+                    if link_text and href:
+                        # Replace plain link text with "text (url)"
+                        paragraph_text = paragraph_text.replace(link_text, f"{link_text} ({href})")
+
+                content.append(paragraph_text)
+
+            return ' '.join(content)
 
         except Exception as e:
-            logging.error(f"Error extracting articles: {str(e)}")
+            logging.error(f"Error extracting content: {str(e)}")
+            return None
+
+    def _extract_date(self) -> Optional[str]:
+        """Extract article publication date"""
+        try:
+            date_element = self.driver.wait_for_element(self.selectors['article_date'])
+            if date_element:
+                date = date_element.get_attribute('datetime') or date_element.text
+                return date
+            return None
+        except Exception as e:
+            logging.error(f"Error extracting date: {str(e)}")
             return None 
